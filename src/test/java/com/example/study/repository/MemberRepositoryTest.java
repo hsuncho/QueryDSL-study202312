@@ -3,7 +3,10 @@ package com.example.study.repository;
         import com.example.study.entity.Member;
         import com.example.study.entity.QMember;
         import com.example.study.entity.Team;
+        import com.querydsl.core.Tuple;
+        import com.querydsl.jpa.JPAExpressions;
         import com.querydsl.jpa.impl.JPAQueryFactory;
+        import org.apache.logging.log4j.message.MessageFactory2;
         import org.junit.jupiter.api.Assertions;
         import org.junit.jupiter.api.BeforeEach;
         import org.junit.jupiter.api.DisplayName;
@@ -18,6 +21,7 @@ package com.example.study.repository;
         import java.util.List;
 
         import static com.example.study.entity.QMember.member;
+        import static com.example.study.entity.QTeam.team;
         import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
@@ -56,19 +60,19 @@ class MemberRepositoryTest {
 //        teamRepository.save(teamB);
 
         Member member1 = Member.builder()
-                .userName("member5")
+                .userName("member9")
                 .age(50)
                 .build();
         Member member2 = Member.builder()
-                .userName("member6")
-                .age(60)
+                .userName("member10")
+                .age(50)
                 .build();
         Member member3 = Member.builder()
-                .userName("member7")
-                .age(70)
+                .userName("member11")
+                .age(30)
                 .build();
         Member member4 = Member.builder()
-                .userName("member8")
+                .userName("member12")
                 .age(80)
                 .build();
 
@@ -232,14 +236,210 @@ class MemberRepositoryTest {
         //given
 
         //when
-        factory.selectFrom(member)
+        List<Member> result = factory.selectFrom(member)
                 .orderBy(member.userName.desc())
-                .offset(3)
+                .offset(3) // 1번 행은 0
                 .limit(3)
                 .fetch();
 
         //then
+        assertEquals(result.size(), 3);
+        assertEquals(result.get(2).getUserName(), "member3");
+
+        // 이름 내림차순으로 정렬되어 있으므로 87654321
+        // limit 3 -> 네 번째 행부터 검색됨 (8, 7, 6, '5')
+        // 5 4 3 세 개가 조회되는데(offset = 3) 2번 인덱스 지정했으므로 멤버 3이 올 것이야
+
     }
+
+    @Test
+    @DisplayName("그룹 함수의 종류")
+    void aggregation() {
+        //given
+
+        //when
+        List<Tuple> result = factory.select(
+                        member.count(),
+                        member.age.sum(),
+                        member.age.avg(),
+                        member.age.max(),
+                        member.age.min()
+                )
+                .from(member)
+                .fetch();// 여러 값이 return 되므로
+
+        // SELECT COUNT(*), SUM(*), AVG(age), MAX(age), MIN(age)
+        // 조회하고자 하는 값이 entity가 아니라 그룹함수를 사용한 결과를 받으므로 타입이 tuple
+
+        Tuple tuple = result.get(0);
+
+        //then
+        assertEquals(tuple.get(member.count()), 8);
+        assertEquals(tuple.get(member.age.sum()), 360);
+        assertEquals(tuple.get(member.age.avg()), 45);
+        assertEquals(tuple.get(member.age.min()), 10);
+        assertEquals(tuple.get(member.age.max()), 80);
+
+        System.out.println("\n\n\n");
+        System.out.println("result = " + result); // 리스트 안에 리스트로 존재
+        System.out.println("tuple = " + tuple); // 컬럼 이름만 전달해주어도 값이 정확하게 옴
+        System.out.println("\n\n\n");
+
+    }
+
+   @Test
+   @DisplayName("GROUP BY, HAVING")
+   void testGroupBy() {
+       //given
+
+       //when
+       List<Long> result = factory.select(member.age.count())
+               .from(member)
+               .groupBy(member.age)
+               .having(member.age.count().goe(2)) // groupBy의 조건절
+               .orderBy(member.age.asc())
+               .fetch();
+
+       //then
+       assertEquals(result.size(), 2);
+
+       System.out.println("\n\n\n");
+       result.forEach(System.out::println);
+       System.out.println("\n\n\n");
+
+   }
+
+   @Test
+   @DisplayName("join 해보기")
+   void join() {
+       //given
+
+       // Oracle DB의 경우 Oracle의 조인 문법도 사용이 가능하다.
+       // SELECT * FROM employees, departments WHERE ~~~
+       // select().from(employees, departments).where(~~~~)
+
+       //when
+       List<Member> result = factory.selectFrom(member)
+               //.join(기준 Etity.조인 대상 Entity, 별칭)
+               .join(member.team, team) // inner join
+               .where(team.name.eq("teamA"))
+               .fetch();
+
+       //then
+       System.out.println("\n\n\n");
+       result.forEach(System.out::println);
+       System.out.println("\n\n\n");
+   }
+
+   @Test
+   @DisplayName("left outer join 테스트")
+   void leftJoinTest() {
+       //given
+
+       /*
+       ex) 회원과 팀을 조인하면서, 팀 이름이 teamA인 팀만 조회, 회원은 모두 조회
+        -> left에 들어갈 테이블은 member
+
+        SQL: SELECT m.*, t.* FROM tbl_member m LEFT JOIN tbl_team t ON m.team_id = t.team_id AND t.name = 'teamA';
+        JPQL: SELECT m, t FROM Member m LEFT JOIN m.team t ON t.name = 'teamA'; 
+            // Member 엔터티에 team 정보가 있음
+       */
+
+       //when
+       List<Tuple> result = factory.select(member, team)
+               .from(member)
+               .leftJoin(member.team, team) // member 안에 있는 team을 조인할 건데 별칭을 team이라 하자
+               .on(team.name.eq("teamA"))
+               .fetch();
+
+       //then
+       System.out.println("\n\n\n");
+//       result.forEach(tuple -> {
+//           System.out.println("tuple = " + tuple);
+//       });
+       result.forEach(System.out::println);
+       System.out.println("\n\n\n");
+   }
+   
+   @Test
+   @DisplayName("sub query 사용하기 (나이가 가장 많은 회원을 조회)")
+   void subQueryTest() {
+       //given
+       // 같은 테이블에서 서브쿼리를 적용하려면 별도로 QClass의 객체를 생성해야 합니다.
+       QMember memberSub = new QMember("memberSub"); // 서브쿼리용 Qmember
+
+       //when
+       List<Member> result = factory.selectFrom(member)
+               .where(member.age.eq(
+                       // 나이가 가장 많은 사람을 조회하는 서브쿼리문
+                       JPAExpressions.select( // 서브쿼리를 사용할 수 있게 해주는 클래스
+                                       memberSub.age.max())
+                               .from(memberSub)
+               )).fetch();
+
+       //then
+       System.out.println("\n\n\n");
+       result.forEach(System.out::println);
+       System.out.println("\n\n\n");
+
+
+   }
+
+   @Test
+   @DisplayName("나이가 평균 나이 이상인 회원을 조회")
+   void subQueryGoe() {
+       //given
+        QMember m2 = new QMember("m2");
+
+        //when
+       List<Member> result = factory.selectFrom(member)
+               .where(member.age.goe(
+                       // JPAExpressions는 from절을 제외하고, select와 where절에서 사용이 가능
+                       // JPQL도 마찬가지고 from절 서브쿼리(인라인뷰) 불가
+                       // -> Native SQL을 작성하든지. MyBatis or JDBCTemplate 이용,
+                       // 따로따로 두 번 조회도 사용
+
+                       JPAExpressions
+                               .select(m2.age.avg())
+                               .from(m2)
+               ))
+               .fetch();
+
+       //then
+       assertEquals(result.size(), 5);
+
+       System.out.println("\n\n\n");
+       result.forEach(System.out::println);
+       System.out.println("\n\n\n");
+
+   }
+
+
+
+
+   
+   
+   
+   
+   
+   
+   
+   
+   
+   
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 }
 
