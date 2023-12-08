@@ -414,32 +414,42 @@ class MemberRepositoryTest {
 
    }
 
+   @Test
+   @DisplayName("동적 sql 테스트")
+   void dynamicQueryTest() {
+       //given
+        String name = null;
+        Integer age = null;
+
+       //when
+       List<Member> result = memberRepository.findUser(name, age);
+
+       //then
+       assertEquals(result.size(), 12);
+
+       System.out.println("\n\n\n");
+       result.forEach(System.out::println);
+       System.out.println("\n\n\n");
 
 
 
-   
-   
-   
-   
-   
-   
-   
-   
-   
-   
-
-
-
-
-
-
-
-
-
-
-
-
+   }
 
 
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
